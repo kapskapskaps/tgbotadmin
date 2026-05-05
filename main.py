@@ -73,6 +73,22 @@ async def unauthorized_handler(message: types.Message):
     logger.warning(f"❌ Неавторизованная попытка доступа от {message.from_user.id} (@{message.from_user.username})")
     await message.answer("⛔️ У вас нет доступа к этому боту.")
 
+# --- КОМАНДА START ---
+@dp.message(Command("start"), F.func(is_admin))
+async def cmd_start(message: types.Message):
+    logger.info(f"✅ Команда /start от администратора {message.from_user.id}")
+    start_text = (
+        f"👋 Привет, {message.from_user.first_name}!\n\n"
+        "Я бот для управления Xray VPN сервером.\n\n"
+        "🔧 **Мои возможности:**\n"
+        "• Мониторинг системы (CPU, RAM, диск)\n"
+        "• Управление пользователями VPN\n"
+        "• Генерация VLESS-ключей\n"
+        "• Просмотр логов и ошибок\n\n"
+        "Используй /help для списка всех команд."
+    )
+    await message.answer(start_text, parse_mode="Markdown")
+
 # --- КОМАНДА HELP ---
 @dp.message(Command("help"), F.func(is_admin))
 async def cmd_help(message: types.Message):
