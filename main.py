@@ -131,24 +131,29 @@ async def cmd_stats(message: types.Message):
 async def cmd_add(message: types.Message, command: CommandObject):
     if not command.args:
         return await message.answer("Укажи email. Пример: /add brother")
-    
+
     email = command.args.strip()
     new_uuid = str(uuid.uuid4())
-    
+
     with open(XRAY_CONFIG, 'r') as f:
         config = json.load(f)
-        
-    # Проверяем, нет ли уже такого
+
     clients = config['inbounds'][0]['settings']['clients']
-    if any(c['email'] == email for c in clients):
-        return await message.answer("Пользователь с таким email уже есть!")
-        
+
+    # Проверяем дубликаты без учета регистра
+    existing_emails = [c['email'].lower() for c in clients]
+    if email.lower() in existing_emails:
+        existing_email = next(c['email'] for c in clients if c['email'].lower() == email.lower())
+        logger.warning(f"Попытка создать дубликат: {email} (существует: {existing_email})")
+        return await message.answer(f"❌ Пользователь с таким именем уже существует: {existing_email}\n\nXray не различает регистр, поэтому '{email}' и '{existing_email}' - это один и тот же пользователь.")
+
     clients.append({"email": email, "id": new_uuid})
-    
+
     with open(XRAY_CONFIG, 'w') as f:
         json.dump(config, f, indent=2)
-        
+
     subprocess.run(["systemctl", "restart", "xray"])
+    logger.info(f"✅ Добавлен пользователь: {email} (UUID: {new_uuid})")
     await message.answer(f"✅ Пользователь {email} добавлен! Сервер перезапущен.\nИспользуй /key {email} для получения ссылки.")
 
 # --- 3. ПРОСМОТР КЛЮЧА ---
