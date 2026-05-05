@@ -55,3 +55,6 @@ data/
 # OS
 .DS_Store
 Thumbs.db
+
+# Windows batch scripts (deployment only for Linux server)
+*.bat
