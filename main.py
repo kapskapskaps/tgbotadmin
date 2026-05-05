@@ -4,24 +4,59 @@ import subprocess
 import uuid
 import psutil
 import os
+import logging
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command, CommandObject
 from aiogram.types import FSInputFile
 from dotenv import load_dotenv
 
+# Настройка логирования
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
 # Загрузка переменных окружения
 load_dotenv()
+logger.info("Переменные окружения загружены")
 
 # --- НАСТРОЙКИ ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID"))
+ADMIN_ID = os.getenv("ADMIN_ID")
 XRAY_CONFIG = os.getenv("XRAY_CONFIG", "/usr/local/etc/xray/config.json")
 DOMAIN = os.getenv("DOMAIN")
 PUBLIC_KEY = os.getenv("PUBLIC_KEY")
 SHORT_ID = os.getenv("SHORT_ID")
 
+# Проверка обязательных переменных
+if not BOT_TOKEN:
+    logger.error("❌ BOT_TOKEN не найден в .env файле!")
+    exit(1)
+if not ADMIN_ID:
+    logger.error("❌ ADMIN_ID не найден в .env файле!")
+    exit(1)
+
+try:
+    ADMIN_ID = int(ADMIN_ID)
+    logger.info(f"✅ ADMIN_ID установлен: {ADMIN_ID}")
+except ValueError:
+    logger.error("❌ ADMIN_ID должен быть числом!")
+    exit(1)
+
+if not DOMAIN:
+    logger.warning("⚠️ DOMAIN не установлен - команда /key может не работать")
+if not PUBLIC_KEY:
+    logger.warning("⚠️ PUBLIC_KEY не установлен - команда /key может не работать")
+if not SHORT_ID:
+    logger.warning("⚠️ SHORT_ID не установлен - команда /key может не работать")
+
+logger.info(f"✅ Конфигурация Xray: {XRAY_CONFIG}")
+logger.info(f"✅ Домен: {DOMAIN}")
+
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
+logger.info("✅ Bot и Dispatcher инициализированы")
 
 # Фильтр для защиты бота (отвечает только тебе)
 def is_admin(message: types.Message) -> bool:
@@ -30,6 +65,7 @@ def is_admin(message: types.Message) -> bool:
 # --- КОМАНДА HELP ---
 @dp.message(Command("help"), F.func(is_admin))
 async def cmd_help(message: types.Message):
+    logger.info(f"Команда /help от пользователя {message.from_user.id}")
     help_text = (
         "🤖 **Доступные команды:**\n\n"
         "/help - Показать это сообщение\n"
@@ -168,7 +204,16 @@ async def cmd_errors(message: types.Message):
     os.remove("temp_err.txt")
 
 async def main():
-    await dp.start_polling(bot)
+    logger.info("=" * 50)
+    logger.info("🤖 Бот запущен и готов к работе!")
+    logger.info(f"👤 Администратор ID: {ADMIN_ID}")
+    logger.info(f"📡 Ожидание сообщений от Telegram...")
+    logger.info("=" * 50)
+    try:
+        await dp.start_polling(bot)
+    except Exception as e:
+        logger.error(f"❌ Ошибка при запуске polling: {e}")
+        raise
 
 if __name__ == "__main__":
     asyncio.run(main())
