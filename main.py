@@ -69,13 +69,26 @@ TEMP_USERS_FILE = "temp_users.json"
 # Загрузка временных пользователей
 def load_temp_users():
     if os.path.exists(TEMP_USERS_FILE):
-        with open(TEMP_USERS_FILE, 'r') as f:
-            return json.load(f)
-    return {}
+        try:
+            with open(TEMP_USERS_FILE, 'r') as f:
+                data = json.load(f)
+                logger.info(f"✅ Загружено {len(data)} временных пользователей")
+                return data
+        except Exception as e:
+            logger.error(f"❌ Ошибка при загрузке temp_users.json: {e}")
+            return {}
+    else:
+        logger.info("📝 Файл temp_users.json не найден, создаю новый")
+        save_temp_users({})
+        return {}
 
 def save_temp_users(temp_users):
-    with open(TEMP_USERS_FILE, 'w') as f:
-        json.dump(temp_users, f, indent=2)
+    try:
+        with open(TEMP_USERS_FILE, 'w') as f:
+            json.dump(temp_users, f, indent=2)
+        logger.info(f"💾 Сохранено {len(temp_users)} временных пользователей")
+    except Exception as e:
+        logger.error(f"❌ Ошибка при сохранении temp_users.json: {e}")
 
 temp_users = load_temp_users()
 
@@ -126,7 +139,8 @@ async def cmd_help(message: types.Message):
         "/errors - Ошибки и блокировки за сегодня\n"
         "/ping - Проверить доступность сервера\n"
         "/export - Экспортировать backup конфигурации\n"
-        "/restart - Перезагрузить Xray (с подтверждением)\n"
+        "/restart - Перезагрузить Xray\n"
+        "/restart_confirm - Подтвердить перезагрузку Xray\n"
         "/info - Информация о системе и версиях\n\n"
         "**Примеры:**\n"
         "`/add brother`\n"
@@ -398,16 +412,20 @@ async def cmd_addtemp(message: types.Message, command: CommandObject):
 
 # Функция для удаления истекших пользователей
 async def cleanup_expired_users():
-    logger.info("Проверка истекших временных пользователей...")
+    logger.info("🔍 Проверка истекших временных пользователей...")
+    logger.info(f"📊 Всего временных пользователей: {len(temp_users)}")
     now = datetime.now()
     expired = []
 
     for email, data in list(temp_users.items()):
         expiry = datetime.fromisoformat(data['expiry'])
+        logger.info(f"  • {email}: истекает {expiry}, осталось {(expiry - now).total_seconds() / 3600:.1f} ч.")
         if now >= expiry:
             expired.append(email)
+            logger.info(f"    ⏰ ИСТЕК!")
 
     if not expired:
+        logger.info("✅ Истекших пользователей нет")
         return
 
     # Удаляем из конфига Xray
@@ -475,32 +493,23 @@ async def cmd_restart(message: types.Message):
         "⚠️ **ВНИМАНИЕ!**\n\n"
         "Перезагрузка Xray разорвет все активные VPN-соединения.\n"
         "Пользователям придется переподключиться.\n\n"
-        "Отправь `confirm` для подтверждения или любое другое сообщение для отмены.",
+        "Используй команду `/restart_confirm` для подтверждения.",
         parse_mode="Markdown"
     )
 
-    # Ждем подтверждения
-    try:
-        response = await bot.wait_for(
-            lambda msg: msg.from_user.id == ADMIN_ID and msg.chat.id == message.chat.id,
-            timeout=30
-        )
+@dp.message(Command("restart_confirm"), F.func(is_admin))
+async def cmd_restart_confirm(message: types.Message):
+    logger.info(f"✅ Подтверждение перезагрузки от администратора {message.from_user.id}")
 
-        if response.text.lower() == "confirm":
-            await message.answer("🔄 Перезагружаю Xray...")
-            result = subprocess.run(["systemctl", "restart", "xray"], capture_output=True, text=True)
+    await message.answer("🔄 Перезагружаю Xray...")
+    result = subprocess.run(["systemctl", "restart", "xray"], capture_output=True, text=True)
 
-            if result.returncode == 0:
-                logger.info("✅ Xray успешно перезапущен")
-                await message.answer("✅ Xray успешно перезапущен!")
-            else:
-                logger.error(f"Ошибка при перезапуске Xray: {result.stderr}")
-                await message.answer(f"❌ Ошибка при перезапуске:\n```\n{result.stderr}\n```", parse_mode="Markdown")
-        else:
-            await message.answer("❌ Перезагрузка отменена.")
-
-    except asyncio.TimeoutError:
-        await message.answer("⏱ Время ожидания истекло. Перезагрузка отменена.")
+    if result.returncode == 0:
+        logger.info("✅ Xray успешно перезапущен")
+        await message.answer("✅ Xray успешно перезапущен!")
+    else:
+        logger.error(f"Ошибка при перезапуске Xray: {result.stderr}")
+        await message.answer(f"❌ Ошибка при перезапуске:\n```\n{result.stderr}\n```", parse_mode="Markdown")
 
 # --- 11. ИНФОРМАЦИЯ О СИСТЕМЕ ---
 @dp.message(Command("info"), F.func(is_admin))
@@ -594,6 +603,9 @@ async def main():
     scheduler.add_job(cleanup_expired_users, 'interval', minutes=10)
     scheduler.start()
     logger.info("✅ Планировщик запущен (проверка каждые 10 минут)")
+
+    # Выполняем первую проверку сразу при запуске
+    await cleanup_expired_users()
 
     try:
         await dp.start_polling(bot)
