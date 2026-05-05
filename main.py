@@ -203,7 +203,7 @@ async def cmd_add(message: types.Message, command: CommandObject):
     with open(XRAY_CONFIG, 'w') as f:
         json.dump(config, f, indent=2)
 
-    subprocess.run(["systemctl", "reload", "xray"])
+    subprocess.run(["systemctl", "restart", "xray"])
     logger.info(f"✅ Добавлен пользователь: {email} (UUID: {new_uuid})")
 
     # Генерируем VLESS-ключ для нового пользователя
@@ -256,7 +256,7 @@ async def cmd_del(message: types.Message, command: CommandObject):
     with open(XRAY_CONFIG, 'w') as f:
         json.dump(config, f, indent=2)
 
-    subprocess.run(["systemctl", "reload", "xray"])
+    subprocess.run(["systemctl", "restart", "xray"])
     await message.answer(f"🗑 Пользователь {email} удален. Конфигурация обновлена.")
 
 # --- 5. ПРОСМОТР ЛОГОВ (Отправка файлом) ---
@@ -384,7 +384,7 @@ async def cmd_addtemp(message: types.Message, command: CommandObject):
     with open(XRAY_CONFIG, 'w') as f:
         json.dump(config, f, indent=2)
 
-    subprocess.run(["systemctl", "reload", "xray"])
+    subprocess.run(["systemctl", "restart", "xray"])
 
     # Сохраняем информацию о временном пользователе
     expiry_time = datetime.now() + timedelta(hours=hours)
@@ -448,7 +448,7 @@ async def cleanup_expired_users():
     save_temp_users(temp_users)
 
     if len(clients) != original_count:
-        subprocess.run(["systemctl", "reload", "xray"])
+        subprocess.run(["systemctl", "restart", "xray"])
         logger.info(f"✅ Удалены истекшие пользователи: {', '.join(expired)}")
 
         # Уведомляем администратора
