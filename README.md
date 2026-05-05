@@ -69,22 +69,9 @@ python main.py
 
 ### Запуск как systemd сервис (рекомендуется)
 
-1. Создайте файл `/etc/systemd/system/xray-bot.service`:
-```ini
-[Unit]
-Description=Xray Telegram Bot
-After=network.target
-
-[Service]
-Type=simple
-User=your_user
-WorkingDirectory=/path/to/tgbot
-Environment="PATH=/path/to/tgbot/venv/bin"
-ExecStart=/path/to/tgbot/venv/bin/python main.py
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
+1. Скопируйте файл службы:
+```bash
+sudo cp xray-bot.service /etc/systemd/system/
 ```
 
 2. Запустите сервис:
@@ -92,6 +79,23 @@ WantedBy=multi-user.target
 sudo systemctl daemon-reload
 sudo systemctl enable xray-bot
 sudo systemctl start xray-bot
+```
+
+3. Проверьте статус:
+```bash
+sudo systemctl status xray-bot
+```
+
+4. Просмотр логов:
+```bash
+sudo journalctl -u xray-bot -f
+```
+
+5. Перезапуск после обновления кода:
+```bash
+cd /root/tgbotadmin
+git pull
+sudo systemctl restart xray-bot
 ```
 
 ## Команды бота
