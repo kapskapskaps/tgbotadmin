@@ -145,7 +145,17 @@ async def cmd_add(message: types.Message, command: CommandObject):
     if email.lower() in existing_emails:
         existing_email = next(c['email'] for c in clients if c['email'].lower() == email.lower())
         logger.warning(f"Попытка создать дубликат: {email} (существует: {existing_email})")
-        return await message.answer(f"❌ Пользователь с таким именем уже существует: {existing_email}\n\nXray не различает регистр, поэтому '{email}' и '{existing_email}' - это один и тот же пользователь.")
+
+        # Находим UUID существующего пользователя
+        existing_client = next(c for c in clients if c['email'].lower() == email.lower())
+        vless_link = f"vless://{existing_client['id']}@{DOMAIN}:443?type=xhttp&security=reality&pbk={PUBLIC_KEY}&sni=github.com&fp=chrome&sid={SHORT_ID}&spx=%2F#{existing_email}"
+
+        return await message.answer(
+            f"❌ Пользователь с таким именем уже существует: **{existing_email}**\n\n"
+            f"Xray не различает регистр, поэтому '{email}' и '{existing_email}' - это один и тот же пользователь.\n\n"
+            f"🔑 Ключ для {existing_email}:\n\n`{vless_link}`",
+            parse_mode="Markdown"
+        )
 
     clients.append({"email": email, "id": new_uuid})
 
@@ -154,7 +164,15 @@ async def cmd_add(message: types.Message, command: CommandObject):
 
     subprocess.run(["systemctl", "restart", "xray"])
     logger.info(f"✅ Добавлен пользователь: {email} (UUID: {new_uuid})")
-    await message.answer(f"✅ Пользователь {email} добавлен! Сервер перезапущен.\nИспользуй /key {email} для получения ссылки.")
+
+    # Генерируем VLESS-ключ для нового пользователя
+    vless_link = f"vless://{new_uuid}@{DOMAIN}:443?type=xhttp&security=reality&pbk={PUBLIC_KEY}&sni=github.com&fp=chrome&sid={SHORT_ID}&spx=%2F#{email}"
+
+    await message.answer(
+        f"✅ Пользователь **{email}** добавлен! Сервер перезапущен.\n\n"
+        f"🔑 Ключ для {email}:\n\n`{vless_link}`",
+        parse_mode="Markdown"
+    )
 
 # --- 3. ПРОСМОТР КЛЮЧА ---
 @dp.message(Command("key"), F.func(is_admin))
