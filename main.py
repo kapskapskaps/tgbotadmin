@@ -5,10 +5,14 @@ import uuid
 import psutil
 import os
 import logging
+import socket
+import time
+from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command, CommandObject
 from aiogram.types import FSInputFile
 from dotenv import load_dotenv
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 # Настройка логирования
 logging.basicConfig(
@@ -56,7 +60,24 @@ logger.info(f"✅ Домен: {DOMAIN}")
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
+scheduler = AsyncIOScheduler()
 logger.info("✅ Bot и Dispatcher инициализированы")
+
+# Файл для хранения временных пользователей
+TEMP_USERS_FILE = "temp_users.json"
+
+# Загрузка временных пользователей
+def load_temp_users():
+    if os.path.exists(TEMP_USERS_FILE):
+        with open(TEMP_USERS_FILE, 'r') as f:
+            return json.load(f)
+    return {}
+
+def save_temp_users(temp_users):
+    with open(TEMP_USERS_FILE, 'w') as f:
+        json.dump(temp_users, f, indent=2)
+
+temp_users = load_temp_users()
 
 # Фильтр для защиты бота (отвечает только тебе)
 def is_admin(message: types.Message) -> bool:
@@ -98,12 +119,15 @@ async def cmd_help(message: types.Message):
         "/help - Показать это сообщение\n"
         "/stats - Статистика системы (CPU, RAM, диск)\n"
         "/add <email> - Добавить нового пользователя\n"
+        "/addtemp <email> <hours> - Добавить временного пользователя\n"
         "/key <email> - Получить VLESS-ключ пользователя\n"
         "/del <email> - Удалить пользователя\n"
         "/logs [15|30|60] - Логи Xray за N минут (по умолчанию 15)\n"
-        "/errors - Ошибки и блокировки за сегодня\n\n"
+        "/errors - Ошибки и блокировки за сегодня\n"
+        "/ping - Проверить доступность сервера\n\n"
         "**Примеры:**\n"
         "`/add brother`\n"
+        "`/addtemp guest 24`\n"
         "`/key maman`\n"
         "`/del doshik`\n"
         "`/logs 30`"
@@ -253,7 +277,169 @@ async def cmd_errors(message: types.Message):
         
     os.remove("temp_err.txt")
 
-# --- 7. ОБРАБОТЧИК НЕИЗВЕСТНЫХ СООБЩЕНИЙ ---
+# --- 7. ПРОВЕРКА ДОСТУПНОСТИ СЕРВЕРА ---
+@dp.message(Command("ping"), F.func(is_admin))
+async def cmd_ping(message: types.Message):
+    logger.info(f"✅ Команда /ping от администратора {message.from_user.id}")
+
+    if not DOMAIN:
+        return await message.answer("❌ DOMAIN не настроен в .env файле")
+
+    await message.answer(f"🔍 Проверяю доступность {DOMAIN}:443...")
+
+    try:
+        # Проверка DNS резолва
+        start_dns = time.time()
+        ip = socket.gethostbyname(DOMAIN)
+        dns_time = (time.time() - start_dns) * 1000
+
+        # Проверка TCP подключения к порту 443
+        start_tcp = time.time()
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(5)
+        result = sock.connect_ex((DOMAIN, 443))
+        tcp_time = (time.time() - start_tcp) * 1000
+        sock.close()
+
+        if result == 0:
+            response = (
+                f"✅ **Сервер доступен!**\n\n"
+                f"🌐 Домен: {DOMAIN}\n"
+                f"📍 IP: {ip}\n"
+                f"⚡️ DNS резолв: {dns_time:.0f}ms\n"
+                f"⚡️ TCP подключение: {tcp_time:.0f}ms\n"
+                f"🔌 Порт 443: Открыт"
+            )
+        else:
+            response = (
+                f"❌ **Сервер недоступен!**\n\n"
+                f"🌐 Домен: {DOMAIN}\n"
+                f"📍 IP: {ip}\n"
+                f"⚡️ DNS резолв: {dns_time:.0f}ms\n"
+                f"🔌 Порт 443: Закрыт или недоступен"
+            )
+
+        await message.answer(response, parse_mode="Markdown")
+
+    except socket.gaierror:
+        await message.answer(f"❌ Не удалось разрешить домен {DOMAIN}\n\nПроверьте DNS записи.")
+    except socket.timeout:
+        await message.answer(f"⏱ Превышено время ожидания при подключении к {DOMAIN}:443")
+    except Exception as e:
+        logger.error(f"Ошибка при проверке доступности: {e}")
+        await message.answer(f"❌ Ошибка при проверке: {str(e)}")
+
+# --- 8. ДОБАВЛЕНИЕ ВРЕМЕННОГО ПОЛЬЗОВАТЕЛЯ ---
+@dp.message(Command("addtemp"), F.func(is_admin))
+async def cmd_addtemp(message: types.Message, command: CommandObject):
+    if not command.args:
+        return await message.answer("Укажи email и часы. Пример: /addtemp guest 24")
+
+    args = command.args.strip().split()
+    if len(args) != 2:
+        return await message.answer("Неверный формат. Пример: /addtemp guest 24")
+
+    email, hours_str = args
+
+    try:
+        hours = int(hours_str)
+        if hours <= 0:
+            return await message.answer("Количество часов должно быть больше 0")
+    except ValueError:
+        return await message.answer("Количество часов должно быть числом")
+
+    new_uuid = str(uuid.uuid4())
+
+    with open(XRAY_CONFIG, 'r') as f:
+        config = json.load(f)
+
+    clients = config['inbounds'][0]['settings']['clients']
+
+    # Проверяем дубликаты без учета регистра
+    existing_emails = [c['email'].lower() for c in clients]
+    if email.lower() in existing_emails:
+        existing_email = next(c['email'] for c in clients if c['email'].lower() == email.lower())
+        logger.warning(f"Попытка создать дубликат: {email} (существует: {existing_email})")
+        return await message.answer(f"❌ Пользователь с таким именем уже существует: {existing_email}")
+
+    clients.append({"email": email, "id": new_uuid})
+
+    with open(XRAY_CONFIG, 'w') as f:
+        json.dump(config, f, indent=2)
+
+    subprocess.run(["systemctl", "reload", "xray"])
+
+    # Сохраняем информацию о временном пользователе
+    expiry_time = datetime.now() + timedelta(hours=hours)
+    temp_users[email] = {
+        "uuid": new_uuid,
+        "expiry": expiry_time.isoformat(),
+        "hours": hours
+    }
+    save_temp_users(temp_users)
+
+    logger.info(f"✅ Добавлен временный пользователь: {email} (UUID: {new_uuid}, истекает: {expiry_time})")
+
+    # Генерируем VLESS-ключ
+    vless_link = f"vless://{new_uuid}@{DOMAIN}:443?type=xhttp&security=reality&pbk={PUBLIC_KEY}&sni=github.com&fp=chrome&sid={SHORT_ID}&spx=%2F#{email}"
+
+    expiry_str = expiry_time.strftime("%Y-%m-%d %H:%M:%S")
+
+    await message.answer(
+        f"✅ Временный пользователь **{email}** добавлен!\n\n"
+        f"⏰ Доступ на {hours} ч.\n"
+        f"🕐 Истекает: {expiry_str}\n\n"
+        f"🔑 Ключ:\n\n`{vless_link}`",
+        parse_mode="Markdown"
+    )
+
+# Функция для удаления истекших пользователей
+async def cleanup_expired_users():
+    logger.info("Проверка истекших временных пользователей...")
+    now = datetime.now()
+    expired = []
+
+    for email, data in list(temp_users.items()):
+        expiry = datetime.fromisoformat(data['expiry'])
+        if now >= expiry:
+            expired.append(email)
+
+    if not expired:
+        return
+
+    # Удаляем из конфига Xray
+    with open(XRAY_CONFIG, 'r') as f:
+        config = json.load(f)
+
+    clients = config['inbounds'][0]['settings']['clients']
+    original_count = len(clients)
+
+    clients = [c for c in clients if c['email'] not in expired]
+    config['inbounds'][0]['settings']['clients'] = clients
+
+    with open(XRAY_CONFIG, 'w') as f:
+        json.dump(config, f, indent=2)
+
+    # Удаляем из списка временных пользователей
+    for email in expired:
+        del temp_users[email]
+
+    save_temp_users(temp_users)
+
+    if len(clients) != original_count:
+        subprocess.run(["systemctl", "reload", "xray"])
+        logger.info(f"✅ Удалены истекшие пользователи: {', '.join(expired)}")
+
+        # Уведомляем администратора
+        try:
+            await bot.send_message(
+                ADMIN_ID,
+                f"🕐 Автоматически удалены истекшие пользователи:\n" + "\n".join(f"• {e}" for e in expired)
+            )
+        except Exception as e:
+            logger.error(f"Не удалось отправить уведомление: {e}")
+
+# --- 9. ОБРАБОТЧИК НЕИЗВЕСТНЫХ СООБЩЕНИЙ ---
 @dp.message(F.func(is_admin))
 async def unknown_message_handler(message: types.Message):
     logger.info(f"Неизвестное сообщение от администратора: {message.text}")
@@ -268,11 +454,19 @@ async def main():
     logger.info(f"👤 Администратор ID: {ADMIN_ID}")
     logger.info(f"📡 Ожидание сообщений от Telegram...")
     logger.info("=" * 50)
+
+    # Запускаем планировщик для проверки истекших пользователей
+    scheduler.add_job(cleanup_expired_users, 'interval', minutes=10)
+    scheduler.start()
+    logger.info("✅ Планировщик запущен (проверка каждые 10 минут)")
+
     try:
         await dp.start_polling(bot)
     except Exception as e:
         logger.error(f"❌ Ошибка при запуске polling: {e}")
         raise
+    finally:
+        scheduler.shutdown()
 
 if __name__ == "__main__":
     asyncio.run(main())

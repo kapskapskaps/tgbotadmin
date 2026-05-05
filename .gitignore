@@ -1,6 +1,9 @@
 # Environment variables
 .env
 
+# Temporary users data
+temp_users.json
+
 # Claude Code
 .claude/
 
