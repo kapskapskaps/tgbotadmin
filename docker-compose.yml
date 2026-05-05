@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  xray-bot:
+    build: .
+    container_name: xray-telegram-bot
+    restart: unless-stopped
+
+    # Переменные окружения из .env файла
+    env_file:
+      - .env
+
+    # Volumes для персистентности данных
+    volumes:
+      - ./xray-config:/usr/local/etc/xray
+      - ./data:/app/data
+      - ./temp_users.json:/app/temp_users.json
+
+    # Проброс портов (если нужен доступ к Xray извне)
+    ports:
+      - "443:443"
+
+    # Привилегии для управления systemd (если требуется)
+    privileged: true
+
+    # Логирование
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # Healthcheck
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(1); s.connect(('localhost', 443)); s.close()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  default:
+    name: xray-network

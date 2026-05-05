@@ -1,0 +1,16 @@
+.git
+.gitignore
+.env
+*.pyc
+__pycache__
+venv
+.venv
+*.log
+temp_users.json
+logs_*.txt
+temp_err.txt
+xray_config_backup_*.json
+.claude
+README.md
+xray-bot.service
+scr.bat

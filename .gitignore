@@ -46,10 +46,12 @@ ENV/
 *.log
 logs_*.txt
 temp_err.txt
+xray_config_backup_*.json
+
+# Docker
+xray-config/
+data/
 
 # OS
 .DS_Store
 Thumbs.db
-
-# Batch files
-*.bat
