@@ -198,7 +198,7 @@ async def cmd_add(message: types.Message, command: CommandObject):
             parse_mode="Markdown"
         )
 
-    clients.append({"email": email, "id": new_uuid})
+    clients.append({"email": email, "id": new_uuid, "flow": "xtls-rprx-vision"})
 
     with open(XRAY_CONFIG, 'w') as f:
         json.dump(config, f, indent=2)
@@ -379,7 +379,7 @@ async def cmd_addtemp(message: types.Message, command: CommandObject):
         logger.warning(f"Попытка создать дубликат: {email} (существует: {existing_email})")
         return await message.answer(f"❌ Пользователь с таким именем уже существует: {existing_email}")
 
-    clients.append({"email": email, "id": new_uuid})
+    clients.append({"email": email, "id": new_uuid, "flow": "xtls-rprx-vision"})
 
     with open(XRAY_CONFIG, 'w') as f:
         json.dump(config, f, indent=2)
