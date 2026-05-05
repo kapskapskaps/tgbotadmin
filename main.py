@@ -162,14 +162,14 @@ async def cmd_add(message: types.Message, command: CommandObject):
     with open(XRAY_CONFIG, 'w') as f:
         json.dump(config, f, indent=2)
 
-    subprocess.run(["systemctl", "restart", "xray"])
+    subprocess.run(["systemctl", "reload", "xray"])
     logger.info(f"✅ Добавлен пользователь: {email} (UUID: {new_uuid})")
 
     # Генерируем VLESS-ключ для нового пользователя
     vless_link = f"vless://{new_uuid}@{DOMAIN}:443?type=xhttp&security=reality&pbk={PUBLIC_KEY}&sni=github.com&fp=chrome&sid={SHORT_ID}&spx=%2F#{email}"
 
     await message.answer(
-        f"✅ Пользователь **{email}** добавлен! Сервер перезапущен.\n\n"
+        f"✅ Пользователь **{email}** добавлен! Конфигурация обновлена.\n\n"
         f"🔑 Ключ для {email}:\n\n`{vless_link}`",
         parse_mode="Markdown"
     )
@@ -214,9 +214,9 @@ async def cmd_del(message: types.Message, command: CommandObject):
     
     with open(XRAY_CONFIG, 'w') as f:
         json.dump(config, f, indent=2)
-        
-    subprocess.run(["systemctl", "restart", "xray"])
-    await message.answer(f"🗑 Пользователь {email} удален. Сервер перезапущен.")
+
+    subprocess.run(["systemctl", "reload", "xray"])
+    await message.answer(f"🗑 Пользователь {email} удален. Конфигурация обновлена.")
 
 # --- 5. ПРОСМОТР ЛОГОВ (Отправка файлом) ---
 @dp.message(Command("logs"), F.func(is_admin))
