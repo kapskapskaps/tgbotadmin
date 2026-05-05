@@ -128,13 +128,13 @@ async def cmd_start(message: types.Message):
 async def cmd_help(message: types.Message):
     logger.info(f"✅ Команда /help от администратора {message.from_user.id}")
     help_text = (
-        "🤖 **Доступные команды:**\n\n"
+        "🤖 <b>Доступные команды:</b>\n\n"
         "/help - Показать это сообщение\n"
         "/stats - Статистика системы (CPU, RAM, диск)\n"
-        "/add <email> - Добавить нового пользователя\n"
-        "/addtemp <email> <hours> - Добавить временного пользователя\n"
-        "/key <email> - Получить VLESS-ключ пользователя\n"
-        "/del <email> - Удалить пользователя\n"
+        "/add &lt;email&gt; - Добавить нового пользователя\n"
+        "/addtemp &lt;email&gt; &lt;hours&gt; - Добавить временного пользователя\n"
+        "/key &lt;email&gt; - Получить VLESS-ключ пользователя\n"
+        "/del &lt;email&gt; - Удалить пользователя\n"
         "/logs [15|30|60] - Логи Xray за N минут (по умолчанию 15)\n"
         "/errors - Ошибки и блокировки за сегодня\n"
         "/ping - Проверить доступность сервера\n"
@@ -142,14 +142,14 @@ async def cmd_help(message: types.Message):
         "/restart - Перезагрузить Xray\n"
         "/restart_confirm - Подтвердить перезагрузку Xray\n"
         "/info - Информация о системе и версиях\n\n"
-        "**Примеры:**\n"
-        "`/add brother`\n"
-        "`/addtemp guest 24`\n"
-        "`/key maman`\n"
-        "`/del doshik`\n"
-        "`/logs 30`"
+        "<b>Примеры:</b>\n"
+        "<code>/add brother</code>\n"
+        "<code>/addtemp guest 24</code>\n"
+        "<code>/key maman</code>\n"
+        "<code>/del doshik</code>\n"
+        "<code>/logs 30</code>"
     )
-    await message.answer(help_text, parse_mode="Markdown")
+    await message.answer(help_text, parse_mode="HTML")
 
 # --- 1. СТАТИСТИКА СИСТЕМЫ И ДИСКА ---
 @dp.message(Command("stats"), F.func(is_admin))
