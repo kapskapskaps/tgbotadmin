@@ -560,35 +560,24 @@ async def cmd_info(message: types.Message):
         temp_users_count = len(temp_users)
         permanent_users = total_users - temp_users_count
 
-        # Экранируем специальные символы для Markdown
-        def escape_markdown(text):
-            special_chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
-            for char in special_chars:
-                text = text.replace(char, f'\\{char}')
-            return text
-
-        xray_version_escaped = escape_markdown(xray_version)
-        uptime_escaped = escape_markdown(uptime)
-        xray_start_time_escaped = escape_markdown(xray_start_time)
-
         info_text = (
-            f"ℹ️ **Информация о системе**\n\n"
-            f"**Xray:**\n"
-            f"├ Версия: {xray_version_escaped}\n"
+            f"ℹ️ <b>Информация о системе</b>\n\n"
+            f"<b>Xray:</b>\n"
+            f"├ Версия: {xray_version}\n"
             f"├ Статус: {xray_status_emoji} {xray_status}\n"
-            f"└ Запущен: {xray_start_time_escaped}\n\n"
-            f"**Сервер:**\n"
-            f"├ Uptime: {uptime_escaped}\n"
+            f"└ Запущен: {xray_start_time}\n\n"
+            f"<b>Сервер:</b>\n"
+            f"├ Uptime: {uptime}\n"
             f"└ Домен: {DOMAIN}\n\n"
-            f"**Бот:**\n"
+            f"<b>Бот:</b>\n"
             f"└ Версия: {bot_version}\n\n"
-            f"**Пользователи:**\n"
+            f"<b>Пользователи:</b>\n"
             f"├ Всего: {total_users}\n"
             f"├ Постоянных: {permanent_users}\n"
             f"└ Временных: {temp_users_count}"
         )
 
-        await message.answer(info_text, parse_mode="Markdown")
+        await message.answer(info_text, parse_mode="HTML")
 
     except Exception as e:
         logger.error(f"Ошибка при получении информации: {e}")
