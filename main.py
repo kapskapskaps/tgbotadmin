@@ -60,12 +60,23 @@ logger.info("✅ Bot и Dispatcher инициализированы")
 
 # Фильтр для защиты бота (отвечает только тебе)
 def is_admin(message: types.Message) -> bool:
-    return message.from_user.id == ADMIN_ID
+    user_id = message.from_user.id
+    is_allowed = user_id == ADMIN_ID
+    logger.info(f"Проверка доступа: user_id={user_id}, admin_id={ADMIN_ID}, разрешено={is_allowed}")
+    if not is_allowed:
+        logger.warning(f"⚠️ Отклонено сообщение от неавторизованного пользователя {user_id}")
+    return is_allowed
+
+# Обработчик для всех сообщений от неавторизованных пользователей
+@dp.message(~F.func(is_admin))
+async def unauthorized_handler(message: types.Message):
+    logger.warning(f"❌ Неавторизованная попытка доступа от {message.from_user.id} (@{message.from_user.username})")
+    await message.answer("⛔️ У вас нет доступа к этому боту.")
 
 # --- КОМАНДА HELP ---
 @dp.message(Command("help"), F.func(is_admin))
 async def cmd_help(message: types.Message):
-    logger.info(f"Команда /help от пользователя {message.from_user.id}")
+    logger.info(f"✅ Команда /help от администратора {message.from_user.id}")
     help_text = (
         "🤖 **Доступные команды:**\n\n"
         "/help - Показать это сообщение\n"
