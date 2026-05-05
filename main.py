@@ -490,11 +490,11 @@ async def cmd_restart(message: types.Message):
     logger.info(f"✅ Команда /restart от администратора {message.from_user.id}")
 
     await message.answer(
-        "⚠️ **ВНИМАНИЕ!**\n\n"
+        "⚠️ <b>ВНИМАНИЕ!</b>\n\n"
         "Перезагрузка Xray разорвет все активные VPN-соединения.\n"
         "Пользователям придется переподключиться.\n\n"
-        "Используй команду `/restart_confirm` для подтверждения.",
-        parse_mode="Markdown"
+        "Используй команду <code>/restart_confirm</code> для подтверждения.",
+        parse_mode="HTML"
     )
 
 @dp.message(Command("restart_confirm"), F.func(is_admin))
@@ -509,7 +509,7 @@ async def cmd_restart_confirm(message: types.Message):
         await message.answer("✅ Xray успешно перезапущен!")
     else:
         logger.error(f"Ошибка при перезапуске Xray: {result.stderr}")
-        await message.answer(f"❌ Ошибка при перезапуске:\n```\n{result.stderr}\n```", parse_mode="Markdown")
+        await message.answer(f"❌ Ошибка при перезапуске:\n<pre>{result.stderr}</pre>", parse_mode="HTML")
 
 # --- 11. ИНФОРМАЦИЯ О СИСТЕМЕ ---
 @dp.message(Command("info"), F.func(is_admin))
