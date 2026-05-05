@@ -124,7 +124,10 @@ async def cmd_help(message: types.Message):
         "/del <email> - Удалить пользователя\n"
         "/logs [15|30|60] - Логи Xray за N минут (по умолчанию 15)\n"
         "/errors - Ошибки и блокировки за сегодня\n"
-        "/ping - Проверить доступность сервера\n\n"
+        "/ping - Проверить доступность сервера\n"
+        "/export - Экспортировать backup конфигурации\n"
+        "/restart - Перезагрузить Xray (с подтверждением)\n"
+        "/info - Информация о системе и версиях\n\n"
         "**Примеры:**\n"
         "`/add brother`\n"
         "`/addtemp guest 24`\n"
@@ -439,7 +442,139 @@ async def cleanup_expired_users():
         except Exception as e:
             logger.error(f"Не удалось отправить уведомление: {e}")
 
-# --- 9. ОБРАБОТЧИК НЕИЗВЕСТНЫХ СООБЩЕНИЙ ---
+# --- 9. ЭКСПОРТ КОНФИГУРАЦИИ ---
+@dp.message(Command("export"), F.func(is_admin))
+async def cmd_export(message: types.Message):
+    logger.info(f"✅ Команда /export от администратора {message.from_user.id}")
+
+    try:
+        if not os.path.exists(XRAY_CONFIG):
+            return await message.answer(f"❌ Файл конфигурации не найден: {XRAY_CONFIG}")
+
+        # Создаем имя файла с датой
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_filename = f"xray_config_backup_{timestamp}.json"
+
+        await message.answer("📦 Создаю backup конфигурации...")
+        await message.answer_document(
+            FSInputFile(XRAY_CONFIG, filename=backup_filename),
+            caption=f"🔐 Backup конфигурации Xray\n📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        )
+        logger.info(f"✅ Конфигурация экспортирована: {backup_filename}")
+
+    except Exception as e:
+        logger.error(f"Ошибка при экспорте конфигурации: {e}")
+        await message.answer(f"❌ Ошибка при экспорте: {str(e)}")
+
+# --- 10. ПЕРЕЗАГРУЗКА XRAY ---
+@dp.message(Command("restart"), F.func(is_admin))
+async def cmd_restart(message: types.Message):
+    logger.info(f"✅ Команда /restart от администратора {message.from_user.id}")
+
+    await message.answer(
+        "⚠️ **ВНИМАНИЕ!**\n\n"
+        "Перезагрузка Xray разорвет все активные VPN-соединения.\n"
+        "Пользователям придется переподключиться.\n\n"
+        "Отправь `confirm` для подтверждения или любое другое сообщение для отмены.",
+        parse_mode="Markdown"
+    )
+
+    # Ждем подтверждения
+    try:
+        response = await bot.wait_for(
+            lambda msg: msg.from_user.id == ADMIN_ID and msg.chat.id == message.chat.id,
+            timeout=30
+        )
+
+        if response.text.lower() == "confirm":
+            await message.answer("🔄 Перезагружаю Xray...")
+            result = subprocess.run(["systemctl", "restart", "xray"], capture_output=True, text=True)
+
+            if result.returncode == 0:
+                logger.info("✅ Xray успешно перезапущен")
+                await message.answer("✅ Xray успешно перезапущен!")
+            else:
+                logger.error(f"Ошибка при перезапуске Xray: {result.stderr}")
+                await message.answer(f"❌ Ошибка при перезапуске:\n```\n{result.stderr}\n```", parse_mode="Markdown")
+        else:
+            await message.answer("❌ Перезагрузка отменена.")
+
+    except asyncio.TimeoutError:
+        await message.answer("⏱ Время ожидания истекло. Перезагрузка отменена.")
+
+# --- 11. ИНФОРМАЦИЯ О СИСТЕМЕ ---
+@dp.message(Command("info"), F.func(is_admin))
+async def cmd_info(message: types.Message):
+    logger.info(f"✅ Команда /info от администратора {message.from_user.id}")
+
+    try:
+        # Версия Xray
+        xray_version_result = subprocess.run(["xray", "version"], capture_output=True, text=True)
+        xray_version = "Неизвестно"
+        if xray_version_result.returncode == 0:
+            # Парсим первую строку с версией
+            first_line = xray_version_result.stdout.split('\n')[0]
+            xray_version = first_line.strip()
+
+        # Uptime сервера
+        uptime_result = subprocess.run(["uptime", "-p"], capture_output=True, text=True)
+        uptime = uptime_result.stdout.strip() if uptime_result.returncode == 0 else "Неизвестно"
+
+        # Статус Xray
+        xray_status_result = subprocess.run(
+            ["systemctl", "is-active", "xray"],
+            capture_output=True,
+            text=True
+        )
+        xray_status = xray_status_result.stdout.strip()
+        xray_status_emoji = "✅" if xray_status == "active" else "❌"
+
+        # Время последнего запуска Xray
+        xray_start_result = subprocess.run(
+            ["systemctl", "show", "xray", "--property=ActiveEnterTimestamp"],
+            capture_output=True,
+            text=True
+        )
+        xray_start_time = "Неизвестно"
+        if xray_start_result.returncode == 0:
+            timestamp_line = xray_start_result.stdout.strip()
+            if "=" in timestamp_line:
+                xray_start_time = timestamp_line.split("=", 1)[1]
+
+        # Версия бота
+        bot_version = "1.0.0"
+
+        # Количество пользователей
+        with open(XRAY_CONFIG, 'r') as f:
+            config = json.load(f)
+        total_users = len(config['inbounds'][0]['settings']['clients'])
+        temp_users_count = len(temp_users)
+        permanent_users = total_users - temp_users_count
+
+        info_text = (
+            f"ℹ️ **Информация о системе**\n\n"
+            f"**Xray:**\n"
+            f"├ Версия: `{xray_version}`\n"
+            f"├ Статус: {xray_status_emoji} {xray_status}\n"
+            f"└ Запущен: {xray_start_time}\n\n"
+            f"**Сервер:**\n"
+            f"├ Uptime: {uptime}\n"
+            f"└ Домен: {DOMAIN}\n\n"
+            f"**Бот:**\n"
+            f"└ Версия: {bot_version}\n\n"
+            f"**Пользователи:**\n"
+            f"├ Всего: {total_users}\n"
+            f"├ Постоянных: {permanent_users}\n"
+            f"└ Временных: {temp_users_count}"
+        )
+
+        await message.answer(info_text, parse_mode="Markdown")
+
+    except Exception as e:
+        logger.error(f"Ошибка при получении информации: {e}")
+        await message.answer(f"❌ Ошибка при получении информации: {str(e)}")
+
+# --- 12. ОБРАБОТЧИК НЕИЗВЕСТНЫХ СООБЩЕНИЙ ---
 @dp.message(F.func(is_admin))
 async def unknown_message_handler(message: types.Message):
     logger.info(f"Неизвестное сообщение от администратора: {message.text}")
