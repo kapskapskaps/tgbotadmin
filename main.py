@@ -253,6 +253,15 @@ async def cmd_errors(message: types.Message):
         
     os.remove("temp_err.txt")
 
+# --- 7. ОБРАБОТЧИК НЕИЗВЕСТНЫХ СООБЩЕНИЙ ---
+@dp.message(F.func(is_admin))
+async def unknown_message_handler(message: types.Message):
+    logger.info(f"Неизвестное сообщение от администратора: {message.text}")
+    await message.answer(
+        "🤔 Я тебя не понимаю.\n\n"
+        "Введи /help чтобы узнать, что я умею."
+    )
+
 async def main():
     logger.info("=" * 50)
     logger.info("🤖 Бот запущен и готов к работе!")
