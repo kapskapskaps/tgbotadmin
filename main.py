@@ -21,8 +21,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Определяем директорию скрипта
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
 # Загрузка переменных окружения
-load_dotenv()
+load_dotenv(os.path.join(SCRIPT_DIR, '.env'))
 logger.info("Переменные окружения загружены")
 
 # --- НАСТРОЙКИ ---
@@ -85,7 +88,7 @@ def get_keyboard(current_mode):
     return keyboard
 
 # Файл для хранения временных пользователей
-TEMP_USERS_FILE = "temp_users.json"
+TEMP_USERS_FILE = os.path.join(SCRIPT_DIR, "temp_users.json")
 
 # Загрузка временных пользователей
 def load_temp_users():

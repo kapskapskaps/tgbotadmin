@@ -5,9 +5,8 @@ After=network.target
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/root/tgbotadmin
 Environment="PATH=/root/tgbotadmin/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-ExecStart=/root/tgbotadmin/venv/bin/python3 main.py
+ExecStart=/root/tgbotadmin/venv/bin/python3 /root/tgbotadmin/main.py
 Restart=always
 RestartSec=10
 
