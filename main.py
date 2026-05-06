@@ -73,6 +73,9 @@ TERMINAL_MODE = "terminal"
 # Хранилище текущего режима (в продакшене лучше использовать Redis/БД)
 user_modes = {}
 
+# Хранилище текущей директории для каждого пользователя
+user_directories = {}
+
 # --- КЛАВИАТУРЫ ---
 def get_keyboard(current_mode):
     """Создает клавиатуру с кнопкой переключения режима"""
@@ -650,17 +653,46 @@ async def unknown_message_handler(message: types.Message):
         command = message.text
         logger.info(f"🖥 Выполнение команды от {user_id}: {command}")
 
+        # Получаем текущую директорию пользователя (по умолчанию /root)
+        current_dir = user_directories.get(user_id, "/root")
+
         await message.answer(f"⚙️ Выполняю команду:\n`{command}`", parse_mode="Markdown")
 
         try:
-            # Выполняем команду через subprocess
+            # Выполняем команду через subprocess с учетом текущей директории
             result = subprocess.run(
                 command,
                 shell=True,
                 capture_output=True,
                 text=True,
-                timeout=30  # Таймаут 30 секунд
+                timeout=30,  # Таймаут 30 секунд
+                cwd=current_dir  # Устанавливаем рабочую директорию
             )
+
+            # Обновляем текущую директорию после выполнения команды
+            # Получаем реальную директорию после выполнения команды
+            pwd_result = subprocess.run(
+                "pwd",
+                shell=True,
+                capture_output=True,
+                text=True,
+                cwd=current_dir
+            )
+
+            # Если команда содержала cd, получаем новую директорию
+            if command.strip().startswith("cd ") or command.strip() == "cd":
+                new_dir_result = subprocess.run(
+                    f"{command} && pwd",
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    cwd=current_dir
+                )
+                if new_dir_result.returncode == 0:
+                    new_dir = new_dir_result.stdout.strip()
+                    if new_dir and os.path.isdir(new_dir):
+                        user_directories[user_id] = new_dir
+                        logger.info(f"📂 Пользователь {user_id} сменил директорию на: {new_dir}")
 
             # Формируем ответ
             output = result.stdout if result.stdout else "(пусто)"
@@ -668,6 +700,7 @@ async def unknown_message_handler(message: types.Message):
 
             response = (
                 f"✅ **Команда выполнена**\n\n"
+                f"**Директория:** `{user_directories.get(user_id, '/root')}`\n"
                 f"**Код возврата:** `{result.returncode}`\n\n"
                 f"**STDOUT:**\n```\n{output[:3000]}\n```\n\n"
                 f"**STDERR:**\n```\n{error[:1000]}\n```"
