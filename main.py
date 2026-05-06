@@ -10,7 +10,7 @@ import time
 from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command, CommandObject
-from aiogram.types import FSInputFile
+from aiogram.types import FSInputFile, ReplyKeyboardMarkup, KeyboardButton
 from dotenv import load_dotenv
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -63,6 +63,27 @@ dp = Dispatcher()
 scheduler = AsyncIOScheduler()
 logger.info("✅ Bot и Dispatcher инициализированы")
 
+# --- РЕЖИМЫ РАБОТЫ ---
+CHAT_MODE = "chat"
+TERMINAL_MODE = "terminal"
+
+# Хранилище текущего режима (в продакшене лучше использовать Redis/БД)
+user_modes = {}
+
+# --- КЛАВИАТУРЫ ---
+def get_keyboard(current_mode):
+    """Создает клавиатуру с кнопкой переключения режима"""
+    if current_mode == CHAT_MODE:
+        button_text = "🖥 Режим терминала"
+    else:
+        button_text = "💬 Режим чата"
+
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text=button_text)]],
+        resize_keyboard=True
+    )
+    return keyboard
+
 # Файл для хранения временных пользователей
 TEMP_USERS_FILE = "temp_users.json"
 
@@ -110,6 +131,10 @@ async def unauthorized_handler(message: types.Message):
 # --- КОМАНДА START ---
 @dp.message(Command("start"), F.func(is_admin))
 async def cmd_start(message: types.Message):
+    user_id = message.from_user.id
+    # По умолчанию устанавливаем режим чата
+    user_modes[user_id] = CHAT_MODE
+
     logger.info(f"✅ Команда /start от администратора {message.from_user.id}")
     start_text = (
         f"👋 Привет, {message.from_user.first_name}!\n\n"
@@ -118,10 +143,12 @@ async def cmd_start(message: types.Message):
         "• Мониторинг системы (CPU, RAM, диск)\n"
         "• Управление пользователями VPN\n"
         "• Генерация VLESS-ключей\n"
-        "• Просмотр логов и ошибок\n\n"
-        "Используй /help для списка всех команд."
+        "• Просмотр логов и ошибок\n"
+        "• Удаленное выполнение команд (режим терминала)\n\n"
+        "Используй /help для списка всех команд.\n"
+        "Используй кнопку ниже для переключения режимов."
     )
-    await message.answer(start_text, parse_mode="Markdown")
+    await message.answer(start_text, parse_mode="Markdown", reply_markup=get_keyboard(CHAT_MODE))
 
 # --- КОМАНДА HELP ---
 @dp.message(Command("help"), F.func(is_admin))
@@ -142,6 +169,9 @@ async def cmd_help(message: types.Message):
         "/restart - Перезагрузить Xray\n"
         "/restart_confirm - Подтвердить перезагрузку Xray\n"
         "/info - Информация о системе и версиях\n\n"
+        "<b>🖥 Режим терминала:</b>\n"
+        "Используй кнопку внизу для переключения в режим терминала.\n"
+        "В этом режиме любой текст выполняется как Bash-команда на сервере.\n\n"
         "<b>Примеры:</b>\n"
         "<code>/add brother</code>\n"
         "<code>/addtemp guest 24</code>\n"
@@ -583,14 +613,81 @@ async def cmd_info(message: types.Message):
         logger.error(f"Ошибка при получении информации: {e}")
         await message.answer(f"❌ Ошибка при получении информации: {str(e)}")
 
+# --- ОБРАБОТЧИК ПЕРЕКЛЮЧЕНИЯ РЕЖИМОВ ---
+@dp.message(F.text.in_(["🖥 Режим терминала", "💬 Режим чата"]), F.func(is_admin))
+async def toggle_mode(message: types.Message):
+    user_id = message.from_user.id
+    current_mode = user_modes.get(user_id, CHAT_MODE)
+
+    # Переключаем режим
+    if current_mode == CHAT_MODE:
+        new_mode = TERMINAL_MODE
+        mode_text = "🖥 **Режим терминала активирован**\n\nТеперь все твои сообщения будут выполняться как Bash-команды на сервере."
+    else:
+        new_mode = CHAT_MODE
+        mode_text = "💬 **Режим чата активирован**\n\nТеперь работают все команды бота (/stats, /help и т.д.)"
+
+    user_modes[user_id] = new_mode
+    logger.info(f"🔄 Пользователь {user_id} переключился на режим: {new_mode}")
+
+    await message.answer(
+        mode_text,
+        parse_mode="Markdown",
+        reply_markup=get_keyboard(new_mode)
+    )
+
 # --- 12. ОБРАБОТЧИК НЕИЗВЕСТНЫХ СООБЩЕНИЙ ---
 @dp.message(F.func(is_admin))
 async def unknown_message_handler(message: types.Message):
-    logger.info(f"Неизвестное сообщение от администратора: {message.text}")
-    await message.answer(
-        "🤔 Я тебя не понимаю.\n\n"
-        "Введи /help чтобы узнать, что я умею."
-    )
+    user_id = message.from_user.id
+    current_mode = user_modes.get(user_id, CHAT_MODE)
+
+    if current_mode == TERMINAL_MODE:
+        # Режим терминала - выполняем команду
+        command = message.text
+        logger.info(f"🖥 Выполнение команды от {user_id}: {command}")
+
+        await message.answer(f"⚙️ Выполняю команду:\n`{command}`", parse_mode="Markdown")
+
+        try:
+            # Выполняем команду через subprocess
+            result = subprocess.run(
+                command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=30  # Таймаут 30 секунд
+            )
+
+            # Формируем ответ
+            output = result.stdout if result.stdout else "(пусто)"
+            error = result.stderr if result.stderr else "(нет ошибок)"
+
+            response = (
+                f"✅ **Команда выполнена**\n\n"
+                f"**Код возврата:** `{result.returncode}`\n\n"
+                f"**STDOUT:**\n```\n{output[:3000]}\n```\n\n"
+                f"**STDERR:**\n```\n{error[:1000]}\n```"
+            )
+
+            # Если вывод слишком длинный, обрезаем
+            if len(response) > 4000:
+                response = response[:4000] + "\n\n... (вывод обрезан)"
+
+            await message.answer(response, parse_mode="Markdown")
+
+        except subprocess.TimeoutExpired:
+            await message.answer("⏱ Команда превысила таймаут (30 секунд)")
+        except Exception as e:
+            logger.error(f"❌ Ошибка при выполнении команды: {e}")
+            await message.answer(f"❌ Ошибка при выполнении:\n`{str(e)}`", parse_mode="Markdown")
+    else:
+        # Режим чата - неизвестная команда
+        logger.info(f"Неизвестное сообщение от администратора: {message.text}")
+        await message.answer(
+            "🤔 Я тебя не понимаю.\n\n"
+            "Введи /help чтобы узнать, что я умею."
+        )
 
 async def main():
     logger.info("=" * 50)
