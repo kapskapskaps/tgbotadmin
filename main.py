@@ -7,6 +7,7 @@ import os
 import logging
 import socket
 import time
+import pexpect
 from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command, CommandObject
@@ -73,8 +74,8 @@ TERMINAL_MODE = "terminal"
 # Хранилище текущего режима (в продакшене лучше использовать Redis/БД)
 user_modes = {}
 
-# Хранилище текущей директории для каждого пользователя
-user_directories = {}
+# Хранилище bash-сессий для каждого пользователя
+user_shells = {}
 
 # --- КЛАВИАТУРЫ ---
 def get_keyboard(current_mode):
@@ -628,9 +629,32 @@ async def toggle_mode(message: types.Message):
     # Переключаем режим
     if current_mode == CHAT_MODE:
         new_mode = TERMINAL_MODE
-        mode_text = "🖥 **Режим терминала активирован**\n\nТеперь все твои сообщения будут выполняться как Bash-команды на сервере."
+
+        # Создаем новую bash-сессию для пользователя
+        try:
+            shell = pexpect.spawn('/bin/bash', encoding='utf-8', timeout=30)
+            shell.setwinsize(100, 200)  # Устанавливаем размер терминала
+            # Ждем приглашение командной строки
+            shell.expect(['[$#] ', pexpect.TIMEOUT], timeout=2)
+            user_shells[user_id] = shell
+            logger.info(f"✅ Создана bash-сессия для пользователя {user_id}")
+            mode_text = "🖥 **Режим терминала активирован**\n\nТеперь у тебя есть постоянная bash-сессия на сервере.\nВсе команды, переменные окружения и cd сохраняются между запросами."
+        except Exception as e:
+            logger.error(f"❌ Ошибка создания bash-сессии: {e}")
+            await message.answer(f"❌ Не удалось создать bash-сессию: {str(e)}")
+            return
     else:
         new_mode = CHAT_MODE
+
+        # Закрываем bash-сессию
+        if user_id in user_shells:
+            try:
+                user_shells[user_id].close()
+                del user_shells[user_id]
+                logger.info(f"✅ Закрыта bash-сессия для пользователя {user_id}")
+            except Exception as e:
+                logger.error(f"⚠️ Ошибка при закрытии сессии: {e}")
+
         mode_text = "💬 **Режим чата активирован**\n\nТеперь работают все команды бота (/stats, /help и т.д.)"
 
     user_modes[user_id] = new_mode
@@ -649,74 +673,75 @@ async def unknown_message_handler(message: types.Message):
     current_mode = user_modes.get(user_id, CHAT_MODE)
 
     if current_mode == TERMINAL_MODE:
-        # Режим терминала - выполняем команду
+        # Режим терминала - выполняем команду в постоянной bash-сессии
         command = message.text
         logger.info(f"🖥 Выполнение команды от {user_id}: {command}")
 
-        # Получаем текущую директорию пользователя (по умолчанию /root)
-        current_dir = user_directories.get(user_id, "/root")
+        # Проверяем наличие bash-сессии
+        if user_id not in user_shells:
+            await message.answer("❌ Bash-сессия не найдена. Переключись в режим терминала заново.")
+            return
 
-        await message.answer(f"⚙️ Выполняю команду:\n`{command}`", parse_mode="Markdown")
+        shell = user_shells[user_id]
 
         try:
-            # Выполняем команду через subprocess с учетом текущей директории
-            result = subprocess.run(
-                command,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=30,  # Таймаут 30 секунд
-                cwd=current_dir  # Устанавливаем рабочую директорию
-            )
+            # Отправляем команду в bash-сессию
+            shell.sendline(command)
 
-            # Обновляем текущую директорию после выполнения команды
-            # Получаем реальную директорию после выполнения команды
-            pwd_result = subprocess.run(
-                "pwd",
-                shell=True,
-                capture_output=True,
-                text=True,
-                cwd=current_dir
-            )
+            # Ждем завершения команды (ищем приглашение командной строки)
+            index = shell.expect(['[$#] ', pexpect.TIMEOUT, pexpect.EOF], timeout=30)
 
-            # Если команда содержала cd, получаем новую директорию
-            if command.strip().startswith("cd ") or command.strip() == "cd":
-                new_dir_result = subprocess.run(
-                    f"{command} && pwd",
-                    shell=True,
-                    capture_output=True,
-                    text=True,
-                    cwd=current_dir
+            if index == 0:
+                # Команда выполнена успешно
+                output = shell.before.strip()
+
+                # Убираем эхо команды из вывода (первая строка)
+                lines = output.split('\n')
+                if lines and lines[0].strip() == command.strip():
+                    output = '\n'.join(lines[1:])
+
+                # Получаем текущую директорию
+                shell.sendline('pwd')
+                shell.expect(['[$#] ', pexpect.TIMEOUT], timeout=2)
+                pwd_output = shell.before.strip().split('\n')
+                current_dir = pwd_output[1].strip() if len(pwd_output) > 1 else '/root'
+
+                # Формируем ответ
+                if not output:
+                    output = "(команда выполнена без вывода)"
+
+                response = (
+                    f"✅ **Команда выполнена**\n\n"
+                    f"**Директория:** `{current_dir}`\n\n"
+                    f"**Вывод:**\n```\n{output[:3800]}\n```"
                 )
-                if new_dir_result.returncode == 0:
-                    new_dir = new_dir_result.stdout.strip()
-                    if new_dir and os.path.isdir(new_dir):
-                        user_directories[user_id] = new_dir
-                        logger.info(f"📂 Пользователь {user_id} сменил директорию на: {new_dir}")
 
-            # Формируем ответ
-            output = result.stdout if result.stdout else "(пусто)"
-            error = result.stderr if result.stderr else "(нет ошибок)"
+                # Если вывод слишком длинный, обрезаем
+                if len(output) > 3800:
+                    response += "\n\n... (вывод обрезан)"
 
-            response = (
-                f"✅ **Команда выполнена**\n\n"
-                f"**Директория:** `{user_directories.get(user_id, '/root')}`\n"
-                f"**Код возврата:** `{result.returncode}`\n\n"
-                f"**STDOUT:**\n```\n{output[:3000]}\n```\n\n"
-                f"**STDERR:**\n```\n{error[:1000]}\n```"
-            )
+                await message.answer(response, parse_mode="Markdown")
 
-            # Если вывод слишком длинный, обрезаем
-            if len(response) > 4000:
-                response = response[:4000] + "\n\n... (вывод обрезан)"
+            elif index == 1:
+                # Таймаут
+                await message.answer("⏱ Команда превысила таймаут (30 секунд)")
+            else:
+                # EOF - сессия закрылась
+                await message.answer("❌ Bash-сессия неожиданно закрылась. Переключись в режим терминала заново.")
+                if user_id in user_shells:
+                    del user_shells[user_id]
 
-            await message.answer(response, parse_mode="Markdown")
-
-        except subprocess.TimeoutExpired:
-            await message.answer("⏱ Команда превысила таймаут (30 секунд)")
         except Exception as e:
             logger.error(f"❌ Ошибка при выполнении команды: {e}")
             await message.answer(f"❌ Ошибка при выполнении:\n`{str(e)}`", parse_mode="Markdown")
+
+            # Пересоздаем сессию при ошибке
+            try:
+                if user_id in user_shells:
+                    user_shells[user_id].close()
+                    del user_shells[user_id]
+            except:
+                pass
     else:
         # Режим чата - неизвестная команда
         logger.info(f"Неизвестное сообщение от администратора: {message.text}")
@@ -746,6 +771,13 @@ async def main():
         logger.error(f"❌ Ошибка при запуске polling: {e}")
         raise
     finally:
+        # Закрываем все bash-сессии при завершении
+        for user_id, shell in list(user_shells.items()):
+            try:
+                shell.close()
+                logger.info(f"✅ Закрыта bash-сессия для пользователя {user_id}")
+            except Exception as e:
+                logger.error(f"⚠️ Ошибка при закрытии сессии {user_id}: {e}")
         scheduler.shutdown()
 
 if __name__ == "__main__":
