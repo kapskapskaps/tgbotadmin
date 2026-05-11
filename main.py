@@ -226,7 +226,7 @@ async def cmd_add(message: types.Message, command: CommandObject):
 
         # Находим UUID существующего пользователя
         existing_client = next(c for c in clients if c['email'].lower() == email.lower())
-        vless_link = f"vless://{existing_client['id']}@{DOMAIN}:443?type=xhttp&security=reality&pbk={PUBLIC_KEY}&sni=github.com&fp=chrome&sid={SHORT_ID}&spx=%2F#{existing_email}"
+        vless_link = f"vless://{existing_client['id']}@{DOMAIN}:443?security=reality&sni=github.com&fp=firefox&pbk={PUBLIC_KEY}&sid={SHORT_ID}&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#{existing_email}"
 
         return await message.answer(
             f"❌ Пользователь с таким именем уже существует: **{existing_email}**\n\n"
@@ -244,7 +244,7 @@ async def cmd_add(message: types.Message, command: CommandObject):
     logger.info(f"✅ Добавлен пользователь: {email} (UUID: {new_uuid})")
 
     # Генерируем VLESS-ключ для нового пользователя
-    vless_link = f"vless://{new_uuid}@{DOMAIN}:443?type=xhttp&security=reality&pbk={PUBLIC_KEY}&sni=github.com&fp=chrome&sid={SHORT_ID}&spx=%2F#{email}"
+    vless_link = f"vless://{new_uuid}@{DOMAIN}:443?security=reality&sni=github.com&fp=firefox&pbk={PUBLIC_KEY}&sid={SHORT_ID}&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#{email}"
 
     await message.answer(
         f"✅ Пользователь **{email}** добавлен! Конфигурация обновлена.\n\n"
@@ -267,8 +267,8 @@ async def cmd_key(message: types.Message, command: CommandObject):
     if not client:
         return await message.answer("Пользователь не найден.")
         
-    # Генерируем VLESS-Reality-xHTTP ссылку
-    vless_link = f"vless://{client['id']}@{DOMAIN}:443?type=xhttp&security=reality&pbk={PUBLIC_KEY}&sni=github.com&fp=chrome&sid={SHORT_ID}&spx=%2F#{email}"
+    # Генерируем VLESS-Reality ссылку
+    vless_link = f"vless://{client['id']}@{DOMAIN}:443?security=reality&sni=github.com&fp=firefox&pbk={PUBLIC_KEY}&sid={SHORT_ID}&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#{email}"
     
     await message.answer(f"🔑 Ключ для {email}:\n\n`{vless_link}`", parse_mode="Markdown")
 
@@ -435,7 +435,7 @@ async def cmd_addtemp(message: types.Message, command: CommandObject):
     logger.info(f"✅ Добавлен временный пользователь: {email} (UUID: {new_uuid}, истекает: {expiry_time})")
 
     # Генерируем VLESS-ключ
-    vless_link = f"vless://{new_uuid}@{DOMAIN}:443?type=xhttp&security=reality&pbk={PUBLIC_KEY}&sni=github.com&fp=chrome&sid={SHORT_ID}&spx=%2F#{email}"
+    vless_link = f"vless://{new_uuid}@{DOMAIN}:443?security=reality&sni=github.com&fp=firefox&pbk={PUBLIC_KEY}&sid={SHORT_ID}&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#{email}"
 
     expiry_str = expiry_time.strftime("%Y-%m-%d %H:%M:%S")
 
