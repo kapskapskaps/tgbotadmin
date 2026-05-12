@@ -336,29 +336,27 @@ async def cmd_errors(message: types.Message):
 async def cmd_ping(message: types.Message):
     logger.info(f"✅ Команда /ping от администратора {message.from_user.id}")
 
-    if not DOMAIN:
-        return await message.answer("❌ DOMAIN не настроен в .env файле")
-
-    await message.answer(f"🔍 Проверяю доступность {DOMAIN}:443...")
+    target_domain = "kimaro.ru"
+    await message.answer(f"🔍 Проверяю доступность {target_domain}...")
 
     try:
         # Проверка DNS резолва
         start_dns = time.time()
-        ip = socket.gethostbyname(DOMAIN)
+        ip = socket.gethostbyname(target_domain)
         dns_time = (time.time() - start_dns) * 1000
 
         # Проверка TCP подключения к порту 443
         start_tcp = time.time()
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(5)
-        result = sock.connect_ex((DOMAIN, 443))
+        result = sock.connect_ex((target_domain, 443))
         tcp_time = (time.time() - start_tcp) * 1000
         sock.close()
 
         if result == 0:
             response = (
-                f"✅ **Сервер доступен!**\n\n"
-                f"🌐 Домен: {DOMAIN}\n"
+                f"✅ **Сайт доступен!**\n\n"
+                f"🌐 Домен: {target_domain}\n"
                 f"📍 IP: {ip}\n"
                 f"⚡️ DNS резолв: {dns_time:.0f}ms\n"
                 f"⚡️ TCP подключение: {tcp_time:.0f}ms\n"
@@ -366,8 +364,8 @@ async def cmd_ping(message: types.Message):
             )
         else:
             response = (
-                f"❌ **Сервер недоступен!**\n\n"
-                f"🌐 Домен: {DOMAIN}\n"
+                f"❌ **Сайт недоступен!**\n\n"
+                f"🌐 Домен: {target_domain}\n"
                 f"📍 IP: {ip}\n"
                 f"⚡️ DNS резолв: {dns_time:.0f}ms\n"
                 f"🔌 Порт 443: Закрыт или недоступен"
@@ -376,9 +374,9 @@ async def cmd_ping(message: types.Message):
         await message.answer(response, parse_mode="Markdown")
 
     except socket.gaierror:
-        await message.answer(f"❌ Не удалось разрешить домен {DOMAIN}\n\nПроверьте DNS записи.")
+        await message.answer(f"❌ Не удалось разрешить домен {target_domain}\n\nПроверьте DNS записи.")
     except socket.timeout:
-        await message.answer(f"⏱ Превышено время ожидания при подключении к {DOMAIN}:443")
+        await message.answer(f"⏱ Превышено время ожидания при подключении к {target_domain}:443")
     except Exception as e:
         logger.error(f"Ошибка при проверке доступности: {e}")
         await message.answer(f"❌ Ошибка при проверке: {str(e)}")
